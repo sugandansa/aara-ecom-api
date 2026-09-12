@@ -14,6 +14,7 @@ const mockOrdersService = {
   findOneForCustomer: jest.fn(),
   updateStatus: jest.fn(),
   cancel: jest.fn(),
+  requestReturn: jest.fn(),
 };
 
 describe("OrdersController", () => {
@@ -103,13 +104,32 @@ describe("OrdersController", () => {
 
   describe("cancel()", () => {
     it("should cancel an order", async () => {
-      const cancelled = { id: 1, status: "CANCELLED" };
+      const cancelled = {
+        status: 200,
+        message: "Order cancelled successfully",
+      };
       mockOrdersService.cancel.mockResolvedValue(cancelled);
 
       const result = await controller.cancel(1, 5);
 
       expect(mockOrdersService.cancel).toHaveBeenCalledWith(1, 5);
       expect(result).toEqual(cancelled);
+    });
+  });
+
+  describe("requestReturn()", () => {
+    it("should request a return", async () => {
+      const payload = { status: 200, message: "Return requested successfully" };
+      mockOrdersService.requestReturn.mockResolvedValue(payload);
+      const dto = {
+        reason: "DAMAGED_PRODUCT" as const,
+        description: "Product was damaged when received",
+      };
+
+      const result = await controller.requestReturn(64, 21, dto as any);
+
+      expect(mockOrdersService.requestReturn).toHaveBeenCalledWith(64, 21, dto);
+      expect(result).toEqual(payload);
     });
   });
 

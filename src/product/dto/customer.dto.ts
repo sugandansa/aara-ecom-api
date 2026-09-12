@@ -47,6 +47,15 @@ export class CustomerLoginDto {
   password: string;
 }
 
+export class CustomerForgotPasswordDto {
+  @ApiProperty({ example: "sarmi19@gmail.com" })
+  @IsEmail()
+  @Transform(({ value }) =>
+    typeof value === "string" ? value.trim().toLowerCase() : value,
+  )
+  email: string;
+}
+
 export class CustomerResetPasswordDto {
   @ApiProperty({
     example: "Sarmi@123",

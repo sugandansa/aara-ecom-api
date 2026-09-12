@@ -6,6 +6,8 @@ export const OrderStatus = {
   PACKED: "PACKED",
   SHIPPED: "SHIPPED",
   DELIVERED: "DELIVERED",
+  /** Customer requested return after delivery */
+  RETURN_REQUESTED: "RETURN_REQUESTED",
   CANCELLED: "CANCELLED",
   FAILED: "FAILED",
   /** Legacy rows may still use this value */
@@ -34,6 +36,7 @@ const STATUS_ALIASES: Record<string, string> = {
   packed: OrderStatus.PACKED,
   shipped: OrderStatus.SHIPPED,
   delivered: OrderStatus.DELIVERED,
+  return_requested: OrderStatus.RETURN_REQUESTED,
   cancelled: OrderStatus.CANCELLED,
   canceled: OrderStatus.CANCELLED,
   failed: OrderStatus.FAILED,
@@ -51,6 +54,7 @@ export function normalizeOrderStatus(status: string): string {
     status === OrderStatus.PACKED ||
     status === OrderStatus.SHIPPED ||
     status === OrderStatus.DELIVERED ||
+    status === OrderStatus.RETURN_REQUESTED ||
     status === OrderStatus.CANCELLED ||
     status === OrderStatus.FAILED
   ) {
@@ -84,7 +88,8 @@ export const ORDER_STATUS_TRANSITIONS: Record<string, readonly string[]> = {
   ],
   [OrderStatus.PACKED]: [OrderStatus.SHIPPED, OrderStatus.CANCELLED],
   [OrderStatus.SHIPPED]: [OrderStatus.DELIVERED],
-  [OrderStatus.DELIVERED]: [],
+  [OrderStatus.DELIVERED]: [OrderStatus.RETURN_REQUESTED],
+  [OrderStatus.RETURN_REQUESTED]: [],
   [OrderStatus.CANCELLED]: [],
   [OrderStatus.FAILED]: [],
   // Legacy lowercase rows in older data (pending covered by LEGACY_PENDING)
@@ -92,7 +97,8 @@ export const ORDER_STATUS_TRANSITIONS: Record<string, readonly string[]> = {
   confirmed: [OrderStatus.PACKED, OrderStatus.SHIPPED, OrderStatus.CANCELLED],
   packed: [OrderStatus.SHIPPED, OrderStatus.CANCELLED],
   shipped: [OrderStatus.DELIVERED],
-  delivered: [],
+  delivered: [OrderStatus.RETURN_REQUESTED],
+  return_requested: [],
   cancelled: [],
   canceled: [],
   failed: [],
@@ -117,4 +123,5 @@ export const OrderEventType = {
   CUSTOMER_CONTACTED: "customer_contacted",
   AUTO_DELIVERED: "auto_delivered",
   CANCELLED: "cancelled",
+  RETURN_REQUESTED: "return_requested",
 } as const;

@@ -41,7 +41,7 @@ describe("CheckoutController", () => {
 
       const result = await controller.getSummary(7);
 
-      expect(mockCheckoutService.getSummary).toHaveBeenCalledWith(7);
+      expect(mockCheckoutService.getSummary).toHaveBeenCalledWith(7, undefined);
       expect(result).toEqual(payload);
     });
   });

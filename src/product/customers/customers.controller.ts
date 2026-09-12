@@ -23,6 +23,7 @@ import { CustomersService } from "./customers.service";
 import {
   CreateCustomerDto,
   CustomerLoginDto,
+  CustomerForgotPasswordDto,
   CustomerResetPasswordDto,
   CreateCustomerAddressDto,
   UpdateCustomerAddressDto,
@@ -59,6 +60,22 @@ export class CustomersController {
   @ApiResponse({ status: 400, description: "Invalid credentials" })
   login(@Body() dto: CustomerLoginDto) {
     return this.customersService.login(dto);
+  }
+
+  @Public()
+  @Post("forgot-password")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Generate password reset token for a customer email",
+  })
+  @ApiBody({ type: CustomerForgotPasswordDto })
+  @ApiResponse({
+    status: 200,
+    description: "Reset token generated",
+  })
+  @ApiResponse({ status: 404, description: "Customer email not found" })
+  forgotPassword(@Body() dto: CustomerForgotPasswordDto) {
+    return this.customersService.forgotPassword(dto.email);
   }
 
   @Public()

@@ -15,6 +15,7 @@ import {
   UpdateCustomerAddressDto,
 } from "../dto/customer.dto";
 import * as bcrypt from "bcrypt";
+import * as crypto from "crypto";
 import * as jwt from "jsonwebtoken";
 
 type NormalizedAddress = {
@@ -194,6 +195,35 @@ export class CustomersService {
     return { token, customerId: customer.id, name: customer.name };
   }
 
+  async forgotPassword(emailRaw: string) {
+    const email = normalizeCustomerEmail(emailRaw);
+    const customer = await this.prisma.customer.findUnique({
+      where: { email },
+      select: { id: true, isBlocked: true },
+    });
+    if (!customer) {
+      throw new NotFoundException("No customer found with this email");
+    }
+    if (customer.isBlocked) {
+      throw new UnauthorizedException("Account is blocked");
+    }
+
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await this.prisma.customer.update({
+      where: { id: customer.id },
+      data: { resetToken, resetTokenExpiry },
+    });
+
+    // Token returned for website reset flow (also store for server-side validation).
+    return {
+      message: "Reset token generated.",
+      customerId: customer.id,
+      resetToken,
+    };
+  }
+
   async resetPassword(id: number, newPassword: string) {
     const password = newPassword?.trim();
     if (!password || password.length < 6) {
@@ -208,7 +238,11 @@ export class CustomersService {
     const passwordHash = await bcrypt.hash(password, 10);
     await this.prisma.customer.update({
       where: { id },
-      data: { passwordHash },
+      data: {
+        passwordHash,
+        resetToken: null,
+        resetTokenExpiry: null,
+      },
     });
     return { message: "updated successfully." };
   }

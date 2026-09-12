@@ -8,9 +8,15 @@ import { Prisma } from "@prisma/client";
 import type { Coupon } from "@prisma/client";
 import { randomUUID } from "crypto";
 import { PrismaService } from "../../prisma/prisma.service";
+import {
+  OrderStatus,
+  PaymentStatus,
+  OrderEventType,
+  normalizeOrderStatus,
+} from "../constants/order-status";
 import { CreateOrderDto } from "../dto/order.dto";
+import type { ReturnOrderDto } from "../dto/order.dto";
 import { AdminUpdateOrderDto } from "../../admin/dto/admin.dto";
-import { OrderStatus } from "../constants/order-status";
 import {
   computeCheckoutTotals,
   toCartLineInputs,
@@ -383,17 +389,150 @@ export class OrdersService {
     if (order.customerId !== customerId) {
       throw new ForbiddenException("Not your order");
     }
-    if (order.status === OrderStatus.CANCELLED) {
-      return order;
+
+    const status = normalizeOrderStatus(order.status);
+    if (
+      status === OrderStatus.CANCELLED ||
+      order.status === "cancelled" ||
+      order.status === "canceled"
+    ) {
+      return { status: 200, message: "Order cancelled successfully" };
     }
-    if (order.status !== OrderStatus.PENDING_PAYMENT) {
+
+    const cancellable = new Set([
+      OrderStatus.PENDING_PAYMENT,
+      OrderStatus.PROCESSING,
+      OrderStatus.PACKED,
+      OrderStatus.LEGACY_PENDING,
+      "processing",
+      "confirmed",
+      "packed",
+      "pending",
+    ]);
+    if (!cancellable.has(order.status) && !cancellable.has(status)) {
       throw new BadRequestException(
-        "Only orders awaiting payment can be cancelled by customer",
+        "Only orders that are not yet shipped can be cancelled. Use return for delivered orders.",
       );
     }
-    if (order.paymentStatus === "paid") {
-      throw new BadRequestException("Paid orders cannot use this cancel flow");
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.releaseStockOnCustomerCancel(tx, order);
+      await tx.order.update({
+        where: { id: orderId },
+        data: { status: OrderStatus.CANCELLED },
+      });
+      await tx.orderEvent.create({
+        data: {
+          orderId,
+          type: OrderEventType.CANCELLED,
+          label: "Order cancelled by customer",
+          detail: null,
+          actorType: "customer",
+          actorName: `customer#${customerId}`,
+          metadata: { previousStatus: order.status },
+        },
+      });
+    });
+
+    return { status: 200, message: "Order cancelled successfully" };
+  }
+
+  async requestReturn(
+    orderId: number,
+    customerId: number,
+    dto: ReturnOrderDto,
+  ) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { refunds: { orderBy: { id: "desc" }, take: 5 } },
+    });
+    if (!order) throw new NotFoundException(`Order #${orderId} not found`);
+    if (order.customerId !== customerId) {
+      throw new ForbiddenException("Not your order");
     }
+
+    const status = normalizeOrderStatus(order.status);
+    if (status !== OrderStatus.DELIVERED && order.status !== "delivered") {
+      throw new BadRequestException("Only delivered orders can be returned");
+    }
+
+    if (
+      status === OrderStatus.RETURN_REQUESTED ||
+      order.refunds.some((r) =>
+        ["requested", "approved"].includes(r.status.toLowerCase()),
+      )
+    ) {
+      throw new BadRequestException(
+        "A return/refund request already exists for this order",
+      );
+    }
+
+    const reasonText = `${dto.reason}: ${dto.description.trim()}`;
+
+    await this.prisma.$transaction(async (tx) => {
+      const refund = await tx.orderRefund.create({
+        data: {
+          orderId,
+          amount: order.totalAmount,
+          reason: reasonText,
+          status: "requested",
+          items: {
+            reason: dto.reason,
+            description: dto.description.trim(),
+            source: "customer",
+          } as Prisma.InputJsonValue,
+        },
+      });
+
+      await tx.order.update({
+        where: { id: orderId },
+        data: { status: OrderStatus.RETURN_REQUESTED },
+      });
+
+      await tx.orderEvent.create({
+        data: {
+          orderId,
+          type: OrderEventType.RETURN_REQUESTED,
+          label: "Return requested by customer",
+          detail: reasonText,
+          actorType: "customer",
+          actorName: `customer#${customerId}`,
+          metadata: {
+            refundId: refund.id,
+            reason: dto.reason,
+            description: dto.description.trim(),
+          },
+        },
+      });
+    });
+
+    return { status: 200, message: "Return requested successfully" };
+  }
+
+  /**
+   * PENDING_PAYMENT / unpaid: release reservedStock.
+   * Otherwise (COD deducted / paid): restock Product.stock.
+   */
+  private async releaseStockOnCustomerCancel(
+    tx: Prisma.TransactionClient,
+    order: {
+      status: string;
+      paymentStatus: string;
+      items: Array<{
+        quantity: number;
+        variant: {
+          variantName: string | null;
+          packSize: {
+            size: { toString(): string } | number;
+            unit: string;
+            label: string;
+          } | null;
+          product: { id: number; stockUnit: string | null };
+        };
+      }>;
+    },
+  ): Promise<void> {
+    if (!order.items.length) return;
 
     const byProduct = this.aggregateProductPoolUnits(
       order.items.map((item) => ({
@@ -404,18 +543,26 @@ export class OrdersService {
         variantName: item.variant.variantName,
       })),
     );
+
     const T = quoteSqlIdentifier("Product");
+    const stockCol = quoteSqlIdentifier("stock");
     const reservedCol = quoteSqlIdentifier("reservedStock");
-    await this.prisma.$transaction(async (tx) => {
-      for (const [productId, neededBase] of byProduct) {
-        const product = await tx.product.findUniqueOrThrow({
-          where: { id: productId },
-          select: { stockUnit: true },
-        });
-        const units = unitsToDeductFromStoredPool(
-          neededBase,
-          product.stockUnit,
-        );
+    const status = normalizeOrderStatus(order.status);
+    const releaseReservation =
+      (status === OrderStatus.PENDING_PAYMENT ||
+        order.status === OrderStatus.LEGACY_PENDING ||
+        order.status === "pending") &&
+      order.paymentStatus !== PaymentStatus.PAID;
+
+    for (const [productId, neededBase] of byProduct) {
+      const product = await tx.product.findUniqueOrThrow({
+        where: { id: productId },
+        select: { stockUnit: true, stock: true, reservedStock: true },
+      });
+      const units = unitsToDeductFromStoredPool(neededBase, product.stockUnit);
+      if (units <= 0) continue;
+
+      if (releaseReservation) {
         const rowsAffected = await tx.$executeRawUnsafe(
           `UPDATE ${T} SET ${reservedCol} = ${reservedCol} - ? WHERE id = ? AND ${reservedCol} >= ?`,
           units,
@@ -427,14 +574,34 @@ export class OrdersService {
             `Failed to release reservation for product #${productId}`,
           );
         }
+        await recordStockMovement(tx, {
+          productId,
+          type: "release",
+          quantityChange: 0,
+          stockBefore: product.stock,
+          stockAfter: product.stock,
+          reservedBefore: product.reservedStock,
+          reservedAfter: Math.max(0, product.reservedStock - units),
+          reason: "customer_cancel_release",
+        });
+      } else {
+        await tx.$executeRawUnsafe(
+          `UPDATE ${T} SET ${stockCol} = ${stockCol} + ? WHERE id = ?`,
+          units,
+          productId,
+        );
+        await recordStockMovement(tx, {
+          productId,
+          type: "restock",
+          quantityChange: units,
+          stockBefore: product.stock,
+          stockAfter: product.stock + units,
+          reservedBefore: product.reservedStock,
+          reservedAfter: product.reservedStock,
+          reason: "customer_cancel_restock",
+        });
       }
-      await tx.order.update({
-        where: { id: orderId },
-        data: { status: OrderStatus.CANCELLED },
-      });
-    });
-
-    return this.findOne(orderId);
+    }
   }
 
   findAll(customerId?: number) {

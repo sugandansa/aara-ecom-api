@@ -309,20 +309,24 @@ model CartItem {
 }
 
 model Customer {
-  id           Int       @id @default(autoincrement())
-  name         String
-  email        String    @unique
-  phone        String?
-  passwordHash String
-  isBlocked    Boolean   @default(false)
-  createdAt    DateTime  @default(now())
-  addresses    CustomerAddress[]
-  carts        Cart[]
-  orders       Order[]
+  id               Int       @id @default(autoincrement())
+  name             String
+  email            String    @unique
+  phone            String?
+  passwordHash     String
+  isBlocked        Boolean   @default(false)
+  resetToken       String?
+  resetTokenExpiry DateTime?
+  createdAt        DateTime  @default(now())
+  addresses        CustomerAddress[]
+  carts            Cart[]
+  orders           Order[]
   checkoutSessions     CheckoutSession[]
   checkoutIdempotencies CheckoutIdempotency[]
-  reviews      ProductReview[]
-  wishlists    Wishlist[]
+  reviews          ProductReview[]
+  wishlists        Wishlist[]
+
+  @@index([resetToken])
 }
 
 model Wishlist {

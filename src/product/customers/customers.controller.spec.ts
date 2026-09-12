@@ -26,6 +26,7 @@ const mockLoginResponse = {
 const mockCustomersService = {
   register: jest.fn(),
   login: jest.fn(),
+  forgotPassword: jest.fn(),
   findOne: jest.fn(),
 };
 
@@ -96,6 +97,31 @@ describe("CustomersController", () => {
     });
   });
 
+  describe("forgotPassword", () => {
+    it("should generate a reset token for a customer email", async () => {
+      const payload = {
+        message: "Reset token generated.",
+        customerId: 21,
+        resetToken: "abc123",
+      };
+      service.forgotPassword.mockResolvedValue(payload);
+      const result = await controller.forgotPassword({
+        email: "sarmi19@gmail.com",
+      });
+      expect(result).toEqual(payload);
+      expect(service.forgotPassword).toHaveBeenCalledWith("sarmi19@gmail.com");
+    });
+
+    it("should throw NotFoundException when email is unknown", async () => {
+      service.forgotPassword.mockRejectedValue(
+        new NotFoundException("No customer found with this email"),
+      );
+      await expect(
+        controller.forgotPassword({ email: "missing@gmail.com" }),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
   describe("findOne", () => {
     it("should return customer profile", async () => {
       service.findOne.mockResolvedValue(mockCustomer);
@@ -134,6 +160,14 @@ describe("CustomersController", () => {
       const isPublic = Reflect.getMetadata(
         IS_PUBLIC_KEY,
         CustomersController.prototype.login,
+      );
+      expect(isPublic).toBe(true);
+    });
+
+    it("should mark forgotPassword as @Public()", () => {
+      const isPublic = Reflect.getMetadata(
+        IS_PUBLIC_KEY,
+        CustomersController.prototype.forgotPassword,
       );
       expect(isPublic).toBe(true);
     });

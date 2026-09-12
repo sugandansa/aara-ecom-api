@@ -19,7 +19,11 @@ import {
   ApiBearerAuth,
 } from "@nestjs/swagger";
 import { OrdersService } from "./orders.service";
-import { CreateOrderDto, UpdateOrderStatusDto } from "../dto/order.dto";
+import {
+  CreateOrderDto,
+  UpdateOrderStatusDto,
+  ReturnOrderDto,
+} from "../dto/order.dto";
 import { CurrentCustomerId } from "../decorators/current-customer.decorator";
 
 @ApiBearerAuth()
@@ -60,15 +64,31 @@ export class OrdersController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      "Cancel order (only PENDING_PAYMENT — releases inventory reservation)",
+      "Cancel order (before ship) — releases reservation or restocks pool",
   })
   @ApiParam({ name: "id", type: Number })
-  @ApiResponse({ status: 200, description: "Order cancelled" })
+  @ApiResponse({ status: 200, description: "Order cancelled successfully" })
   cancel(
     @Param("id", ParseIntPipe) id: number,
     @CurrentCustomerId() customerId: number,
   ) {
     return this.ordersService.cancel(id, customerId);
+  }
+
+  @Post(":id/return")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: "Request return for a delivered order",
+  })
+  @ApiParam({ name: "id", type: Number })
+  @ApiBody({ type: ReturnOrderDto })
+  @ApiResponse({ status: 200, description: "Return requested successfully" })
+  requestReturn(
+    @Param("id", ParseIntPipe) id: number,
+    @CurrentCustomerId() customerId: number,
+    @Body() dto: ReturnOrderDto,
+  ) {
+    return this.ordersService.requestReturn(id, customerId, dto);
   }
 
   @Get(":id")

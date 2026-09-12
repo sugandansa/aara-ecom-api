@@ -20,7 +20,7 @@ const courierDetailInclude = {
   rateRules: {
     orderBy: [{ sortOrder: "asc" as const }, { id: "asc" as const }],
   },
-} as const;
+} satisfies Prisma.CourierInclude;
 
 type CourierWithRelations = Prisma.CourierGetPayload<{
   include: typeof courierDetailInclude;

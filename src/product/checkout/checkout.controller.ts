@@ -4,6 +4,7 @@ import {
   Post,
   Body,
   Headers,
+  Query,
   HttpCode,
   HttpStatus,
 } from "@nestjs/common";
@@ -14,6 +15,7 @@ import {
   ApiBody,
   ApiBearerAuth,
   ApiHeader,
+  ApiQuery,
 } from "@nestjs/swagger";
 import { CheckoutService } from "./checkout.service";
 import { ApplyCouponDto, PlaceOrderDto } from "../dto/checkout.dto";
@@ -28,11 +30,24 @@ export class CheckoutController {
   @Get("summary")
   @ApiOperation({
     summary:
-      "Checkout summary — server-calculated prices, tax, shipping, coupon",
+      "Checkout summary — prices, tax, courier shipping by destination state",
+  })
+  @ApiQuery({
+    name: "addressId",
+    required: false,
+    type: Number,
+    description:
+      "Shipping address id (defaults to customer's default / latest address)",
   })
   @ApiResponse({ status: 200, description: "Pricing breakdown" })
-  getSummary(@CurrentCustomerId() customerId: number) {
-    return this.checkoutService.getSummary(customerId);
+  getSummary(
+    @CurrentCustomerId() customerId: number,
+    @Query("addressId") addressId?: string,
+  ) {
+    return this.checkoutService.getSummary(
+      customerId,
+      addressId != null && addressId !== "" ? Number(addressId) : undefined,
+    );
   }
 
   @Post("apply-coupon")

@@ -1,5 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsInt, IsOptional, IsString } from "class-validator";
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  MinLength,
+} from "class-validator";
 import { Type } from "class-transformer";
 
 export class CreateOrderDto {
@@ -31,6 +37,32 @@ export class UpdateOrderStatusDto {
   })
   @IsString()
   status: string;
+}
+
+export enum CustomerReturnReason {
+  DAMAGED_PRODUCT = "DAMAGED_PRODUCT",
+  WRONG_ITEM = "WRONG_ITEM",
+  MISSING_ITEM = "MISSING_ITEM",
+  QUALITY_ISSUE = "QUALITY_ISSUE",
+  NOT_AS_DESCRIBED = "NOT_AS_DESCRIBED",
+  OTHER = "OTHER",
+}
+
+export class ReturnOrderDto {
+  @ApiProperty({
+    example: "DAMAGED_PRODUCT",
+    enum: CustomerReturnReason,
+  })
+  @IsEnum(CustomerReturnReason)
+  reason: CustomerReturnReason;
+
+  @ApiProperty({
+    example: "Product was damaged when received",
+    description: "Customer description of the return request",
+  })
+  @IsString()
+  @MinLength(3)
+  description: string;
 }
 
 export class CreatePaymentDto {
